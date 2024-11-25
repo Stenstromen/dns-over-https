@@ -121,7 +121,7 @@ func parseSubnet(ednsClientSubnet string) (ednsClientFamily uint16, ednsClientAd
 	if slash < 0 {
 		ednsClientAddress = net.ParseIP(ednsClientSubnet)
 		if ednsClientAddress == nil {
-			err = fmt.Errorf("Invalid argument value: \"edns_client_subnet\" = %q", ednsClientSubnet)
+			err = fmt.Errorf("invalid argument value: \"edns_client_subnet\" = %q", ednsClientSubnet)
 			return
 		}
 		if ipv4 := ednsClientAddress.To4(); ipv4 != nil {
@@ -135,7 +135,7 @@ func parseSubnet(ednsClientSubnet string) (ednsClientFamily uint16, ednsClientAd
 	} else {
 		ednsClientAddress = net.ParseIP(ednsClientSubnet[:slash])
 		if ednsClientAddress == nil {
-			err = fmt.Errorf("Invalid argument value: \"edns_client_subnet\" = %q", ednsClientSubnet)
+			err = fmt.Errorf("invalid argument value: \"edns_client_subnet\" = %q", ednsClientSubnet)
 			return
 		}
 		if ipv4 := ednsClientAddress.To4(); ipv4 != nil {
@@ -146,7 +146,7 @@ func parseSubnet(ednsClientSubnet string) (ednsClientFamily uint16, ednsClientAd
 		}
 		netmask, err1 := strconv.ParseUint(ednsClientSubnet[slash+1:], 10, 8)
 		if err1 != nil {
-			err = fmt.Errorf("Invalid argument value: \"edns_client_subnet\" = %q", ednsClientSubnet)
+			err = fmt.Errorf("invalid argument value: \"edns_client_subnet\" = %q", ednsClientSubnet)
 			return
 		}
 		ednsClientNetmask = uint8(netmask)
