@@ -3,7 +3,6 @@ module github.com/stenstromen/dns-over-https
 go 1.23
 
 require (
-	github.com/BurntSushi/toml v1.4.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/infobloxopen/go-trees v0.0.0-20221216143356-66ceba885ebc
 	github.com/miekg/dns v1.1.62
