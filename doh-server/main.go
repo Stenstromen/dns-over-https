@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -15,7 +14,6 @@ import (
 
 var (
 	redisClient *redis.Client
-	ctx         = context.Background()
 )
 
 func InitRedis() {
@@ -39,41 +37,6 @@ func InitRedis() {
 	} else {
 		log.Printf("No REDIS_URL provided, running without cache")
 	}
-}
-
-func checkPIDFile(pidFile string) (bool, error) {
-retry:
-	f, err := os.OpenFile(pidFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
-	if os.IsExist(err) {
-		pidStr, err := os.ReadFile(pidFile)
-		if err != nil {
-			return false, err
-		}
-		pid, err := strconv.ParseUint(string(pidStr), 10, 0)
-		if err != nil {
-			return false, err
-		}
-		_, err = os.Stat(fmt.Sprintf("/proc/%d", pid))
-		if os.IsNotExist(err) {
-			err = os.Remove(pidFile)
-			if err != nil {
-				return false, err
-			}
-			goto retry
-		} else if err != nil {
-			return false, err
-		}
-		log.Printf("Already running on PID %d, exiting.\n", pid)
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-	defer f.Close()
-	_, err = f.WriteString(strconv.FormatInt(int64(os.Getpid()), 10))
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func main() {
