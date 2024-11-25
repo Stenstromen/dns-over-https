@@ -18,7 +18,7 @@ import (
 	jsondns "github.com/stenstromen/dns-over-https/json-dns"
 )
 
-func (s *Server) parseRequestIETF(ctx context.Context, w http.ResponseWriter, r *http.Request) *DNSRequest {
+func (s *Server) parseRequestIETF(_ context.Context, w http.ResponseWriter, r *http.Request) *DNSRequest {
 	requestBase64 := r.FormValue("dns")
 	requestBinary, err := base64.RawURLEncoding.DecodeString(requestBase64)
 	if err != nil {
@@ -144,7 +144,7 @@ func (s *Server) parseRequestIETF(ctx context.Context, w http.ResponseWriter, r 
 	}
 }
 
-func (s *Server) generateResponseIETF(ctx context.Context, w http.ResponseWriter, r *http.Request, req *DNSRequest) {
+func (s *Server) generateResponseIETF(_ context.Context, w http.ResponseWriter, _ *http.Request, req *DNSRequest) {
 	respJSON := jsondns.Marshal(req.response)
 	req.response.Id = req.transactionID
 	respBytes, err := req.response.Pack()
