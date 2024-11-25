@@ -17,7 +17,7 @@ import (
 	jsondns "github.com/stenstromen/dns-over-https/json-dns"
 )
 
-func (s *Server) parseRequestGoogle(ctx context.Context, w http.ResponseWriter, r *http.Request) *DNSRequest {
+func (s *Server) parseRequestGoogle(_ context.Context, _ http.ResponseWriter, r *http.Request) *DNSRequest {
 	name := r.FormValue("name")
 	if name == "" {
 		return &DNSRequest{
@@ -155,7 +155,7 @@ func parseSubnet(ednsClientSubnet string) (ednsClientFamily uint16, ednsClientAd
 	return
 }
 
-func (s *Server) generateResponseGoogle(ctx context.Context, w http.ResponseWriter, r *http.Request, req *DNSRequest) {
+func (s *Server) generateResponseGoogle(_ context.Context, w http.ResponseWriter, _ *http.Request, req *DNSRequest) {
 	respJSON := jsondns.Marshal(req.response)
 	respStr, err := json.Marshal(respJSON)
 	if err != nil {
