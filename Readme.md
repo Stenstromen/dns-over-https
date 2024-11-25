@@ -4,7 +4,7 @@ This is a fork of the original DNS-over-HTTPS project [https://github.com/m13253
 
 Forked at version 2.3.3
 
-# Environment
+## Environment
 
 ```bash
 UPSTREAM_DNS_SERVER="udp:208.67.222.222:53"
@@ -16,13 +16,13 @@ DOH_SERVER_TRIES="3"
 DOH_SERVER_VERBOSE="false"
 ```
 
-# Build
+## Build
 
 ```bash
 podman build -t dns-over-https .
 ```
 
-# Run
+## Run
 
 ```bash
 podman run --rm \
@@ -35,7 +35,7 @@ podman run --rm \
   dns-over-https
 ```
 
-# Todo
+## Todo
 
 - [ ] Podman-Compose with Redis and DNS-over-HTTPS
 - [ ] Kubernetes Deployment example with Redis and DNS-over-HTTPS
