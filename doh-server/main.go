@@ -1,36 +1,45 @@
-/*
-   DNS-over-HTTPS
-   Copyright (C) 2017-2018 Star Brilliant <m13253@hotmail.com>
-
-   Permission is hereby granted, free of charge, to any person obtaining a
-   copy of this software and associated documentation files (the "Software"),
-   to deal in the Software without restriction, including without limitation
-   the rights to use, copy, modify, merge, publish, distribute, sublicense,
-   and/or sell copies of the Software, and to permit persons to whom the
-   Software is furnished to do so, subject to the following conditions:
-
-   The above copyright notice and this permission notice shall be included in
-   all copies or substantial portions of the Software.
-
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-   DEALINGS IN THE SOFTWARE.
-*/
-
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"runtime"
 	"strconv"
+	"strings"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 )
+
+var (
+	redisClient *redis.Client
+	ctx         = context.Background()
+)
+
+func InitRedis() {
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:        redisURL,
+			DialTimeout: 5 * time.Second,
+			Network:     "tcp",
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := redisClient.Ping(ctx).Result()
+		if err != nil {
+			log.Printf("Failed to connect to Redis: %v", err)
+			redisClient = nil
+		} else {
+			log.Printf("Successfully connected to Redis at %s", redisURL)
+		}
+	} else {
+		log.Printf("No REDIS_URL provided, running without cache")
+	}
+}
 
 func checkPIDFile(pidFile string) (bool, error) {
 retry:
@@ -68,49 +77,70 @@ retry:
 }
 
 func main() {
-	confPath := flag.String("conf", "doh-server.conf", "Configuration file")
-	verbose := flag.Bool("verbose", false, "Enable logging")
-	showVersion := flag.Bool("version", false, "Show software version and exit")
-	var pidFile *string
+	var (
+		configPath string
+		conf       *config
+		err        error
+	)
 
-	// I really want to push the technology forward by recommending cgroup-based
-	// process tracking. But I understand some cloud service providers have
-	// their own monitoring system. So this feature is only enabled on Linux and
-	// BSD series platforms which lacks functionality similar to cgroup.
-	switch runtime.GOOS {
-	case "dragonfly", "freebsd", "linux", "netbsd", "openbsd":
-		pidFile = flag.String("pid-file", "", "PID file for legacy supervision systems lacking support for reliable cgroup-based process tracking")
-	}
-
+	flag.StringVar(&configPath, "conf", "", "configuration file path")
 	flag.Parse()
 
-	if *showVersion {
-		fmt.Printf("doh-server %s\nHomepage: https://github.com/m13253/dns-over-https\n", VERSION)
-		return
+	// Initialize default config
+	conf = &config{
+		Listen:   []string{"0.0.0.0:8053"},
+		Path:     "/dns-query",
+		Upstream: []string{"udp:8.8.8.8:53"},
+		Timeout:  10,
+		Tries:    3,
+		Verbose:  false,
 	}
 
-	if pidFile != nil && *pidFile != "" {
-		ok, err := checkPIDFile(*pidFile)
-		if err != nil {
-			log.Printf("Error checking PID file: %v\n", err)
+	// Override with environment variables if present
+	if listen := os.Getenv("DOH_SERVER_LISTEN"); listen != "" {
+		// Ensure proper address format
+		if !strings.Contains(listen, ":") {
+			listen = "0.0.0.0:" + listen
 		}
-		if !ok {
-			return
+		conf.Listen = []string{listen}
+	}
+
+	if prefix := os.Getenv("DOH_HTTP_PREFIX"); prefix != "" {
+		conf.Path = prefix
+	}
+
+	if upstream := os.Getenv("DOH_UPSTREAM_DNS"); upstream != "" {
+		conf.Upstream = strings.Split(upstream, ",")
+	}
+
+	if timeout := os.Getenv("DOH_SERVER_TIMEOUT"); timeout != "" {
+		if t, err := strconv.Atoi(timeout); err == nil {
+			conf.Timeout = uint(t)
 		}
 	}
 
-	conf, err := loadConfig(*confPath)
-	if err != nil {
-		log.Fatalln(err)
+	if tries := os.Getenv("DOH_SERVER_TRIES"); tries != "" {
+		if t, err := strconv.Atoi(tries); err == nil {
+			conf.Tries = uint(t)
+		}
 	}
 
-	if *verbose {
-		conf.Verbose = true
+	if verbose := os.Getenv("DOH_SERVER_VERBOSE"); verbose != "" {
+		conf.Verbose = verbose == "true"
 	}
 
+	// Initialize Redis
+	InitRedis()
+
+	// Create server
 	server, err := NewServer(conf)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	_ = server.Start()
+
+	if conf.Verbose {
+		log.Printf("Configuration: %+v", conf)
+	}
+
+	server.Start()
 }

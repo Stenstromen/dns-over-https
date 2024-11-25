@@ -1,26 +1,3 @@
-/*
-   DNS-over-HTTPS
-   Copyright (C) 2017-2018 Star Brilliant <m13253@hotmail.com>
-
-   Permission is hereby granted, free of charge, to any person obtaining a
-   copy of this software and associated documentation files (the "Software"),
-   to deal in the Software without restriction, including without limitation
-   the rights to use, copy, modify, merge, publish, distribute, sublicense,
-   and/or sell copies of the Software, and to permit persons to whom the
-   Software is furnished to do so, subject to the following conditions:
-
-   The above copyright notice and this permission notice shall be included in
-   all copies or substantial portions of the Software.
-
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-   DEALINGS IN THE SOFTWARE.
-*/
-
 package main
 
 import (
@@ -33,13 +10,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/miekg/dns"
+	"github.com/redis/go-redis/v9"
 
-	jsondns "github.com/m13253/dns-over-https/v2/json-dns"
+	jsondns "github.com/stenstromen/dns-over-https/json-dns"
 )
 
 type Server struct {
@@ -48,6 +27,7 @@ type Server struct {
 	tcpClient    *dns.Client
 	tcpClientTLS *dns.Client
 	servemux     *http.ServeMux
+	redis        *redis.Client
 }
 
 type DNSRequest struct {
@@ -58,51 +38,77 @@ type DNSRequest struct {
 	errcode         int
 	transactionID   uint16
 	isTailored      bool
+	fromCache       bool
 }
 
 func NewServer(conf *config) (*Server, error) {
-	timeout := time.Duration(conf.Timeout) * time.Second
-	s := &Server{
+	// Override config with environment variables if present
+	if upstreamDNS := os.Getenv("UPSTREAM_DNS_SERVER"); upstreamDNS != "" {
+		conf.Upstream = []string{upstreamDNS}
+	}
+
+	if prefix := os.Getenv("DOH_HTTP_PREFIX"); prefix != "" {
+		conf.Path = prefix
+	}
+
+	if listen := os.Getenv("DOH_SERVER_LISTEN"); listen != "" {
+		conf.Listen = []string{listen}
+	}
+
+	if timeout := os.Getenv("DOH_SERVER_TIMEOUT"); timeout != "" {
+		if t, err := strconv.Atoi(timeout); err == nil {
+			conf.Timeout = uint(t)
+		}
+	}
+
+	if tries := os.Getenv("DOH_SERVER_TRIES"); tries != "" {
+		if t, err := strconv.Atoi(tries); err == nil {
+			conf.Tries = uint(t)
+		}
+	}
+
+	if verbose := os.Getenv("DOH_SERVER_VERBOSE"); verbose != "" {
+		conf.Verbose = verbose == "true"
+	}
+
+	server := &Server{
 		conf: conf,
-		udpClient: &dns.Client{
-			Net:     "udp",
-			UDPSize: dns.DefaultMsgSize,
-			Timeout: timeout,
-		},
-		tcpClient: &dns.Client{
-			Net:     "tcp",
-			Timeout: timeout,
-		},
-		tcpClientTLS: &dns.Client{
-			Net:     "tcp-tls",
-			Timeout: timeout,
-		},
-		servemux: http.NewServeMux(),
 	}
-	if conf.LocalAddr != "" {
-		udpLocalAddr, err := net.ResolveUDPAddr("udp", conf.LocalAddr)
+
+	// Initialize Redis if available
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		server.redis = redis.NewClient(&redis.Options{
+			Addr: redisURL,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := server.redis.Ping(ctx).Result()
 		if err != nil {
-			return nil, err
-		}
-		tcpLocalAddr, err := net.ResolveTCPAddr("tcp", conf.LocalAddr)
-		if err != nil {
-			return nil, err
-		}
-		s.udpClient.Dialer = &net.Dialer{
-			Timeout:   timeout,
-			LocalAddr: udpLocalAddr,
-		}
-		s.tcpClient.Dialer = &net.Dialer{
-			Timeout:   timeout,
-			LocalAddr: tcpLocalAddr,
-		}
-		s.tcpClientTLS.Dialer = &net.Dialer{
-			Timeout:   timeout,
-			LocalAddr: tcpLocalAddr,
+			log.Printf("Failed to connect to Redis at %s: %v", redisURL, err)
+			server.redis = nil
+		} else {
+			log.Printf("Successfully connected to Redis at %s", redisURL)
 		}
 	}
-	s.servemux.HandleFunc(conf.Path, s.handlerFunc)
-	return s, nil
+
+	server.udpClient = &dns.Client{
+		Net:     "udp",
+		UDPSize: dns.DefaultMsgSize,
+		Timeout: time.Duration(conf.Timeout) * time.Second,
+	}
+	server.tcpClient = &dns.Client{
+		Net:     "tcp",
+		Timeout: time.Duration(conf.Timeout) * time.Second,
+	}
+	server.tcpClientTLS = &dns.Client{
+		Net:     "tcp-tls",
+		Timeout: time.Duration(conf.Timeout) * time.Second,
+	}
+	server.servemux = http.NewServeMux()
+	server.servemux.HandleFunc(conf.Path, server.handlerFunc)
+	return server, nil
 }
 
 func (s *Server) Start() error {
@@ -339,44 +345,111 @@ func (s *Server) indexQuestionType(msg *dns.Msg, qtype uint16) int {
 	return -1
 }
 
+func createCacheKey(req *DNSRequest) string {
+	if len(req.request.Question) == 0 {
+		return ""
+	}
+	q := req.request.Question[0]
+	return fmt.Sprintf("dns:%s:%d", strings.ToLower(q.Name), q.Qtype)
+}
+
 func (s *Server) doDNSQuery(ctx context.Context, req *DNSRequest) (err error) {
-	numServers := len(s.conf.Upstream)
-	for i := uint(0); i < s.conf.Tries; i++ {
-		req.currentUpstream = s.conf.Upstream[rand.Intn(numServers)]
+	cacheKey := createCacheKey(req)
+	if cacheKey == "" {
+		return fmt.Errorf("invalid DNS request: no question")
+	}
 
-		upstream, t := addressAndType(req.currentUpstream)
+	const cacheTTL = 300 // 5 minutes fixed TTL
 
-		switch t {
-		default:
-			log.Printf("invalid DNS type %q in upstream %q", t, upstream)
-			return &configError{"invalid DNS type"}
-		// Use DNS-over-TLS (DoT) if configured to do so
-		case "tcp-tls":
-			req.response, _, err = s.tcpClientTLS.ExchangeContext(ctx, req.request, upstream)
-		case "tcp", "udp":
-			// Use TCP if always configured to or if the Query type dictates it (AXFR)
-			if t == "tcp" || (s.indexQuestionType(req.request, dns.TypeAXFR) > -1) {
-				req.response, _, err = s.tcpClient.ExchangeContext(ctx, req.request, upstream)
-			} else {
-				req.response, _, err = s.udpClient.ExchangeContext(ctx, req.request, upstream)
-				if err == nil && req.response != nil && req.response.Truncated {
-					log.Println(err)
-					req.response, _, err = s.tcpClient.ExchangeContext(ctx, req.request, upstream)
-				}
-
-				// Retry with TCP if this was an IXFR request, and we only received an SOA
-				if (s.indexQuestionType(req.request, dns.TypeIXFR) > -1) &&
-					(len(req.response.Answer) == 1) &&
-					(req.response.Answer[0].Header().Rrtype == dns.TypeSOA) {
-					req.response, _, err = s.tcpClient.ExchangeContext(ctx, req.request, upstream)
-				}
+	// Try to get from cache first if Redis is available
+	if s.redis != nil {
+		// Try to get fresh cache entry
+		if cachedResponse, err := s.redis.Get(ctx, cacheKey).Bytes(); err == nil {
+			msg := new(dns.Msg)
+			if err := msg.Unpack(cachedResponse); err == nil {
+				req.response = msg
+				req.fromCache = true
+				return nil
 			}
 		}
 
-		if err == nil {
+		// Check for stale entry
+		if cachedResponse, err := s.redis.Get(ctx, cacheKey+":stale").Bytes(); err == nil {
+			msg := new(dns.Msg)
+			if err := msg.Unpack(cachedResponse); err == nil {
+				req.response = msg
+				req.fromCache = true
+				// Trigger background refresh
+				go s.refreshCache(cacheKey, req.request)
+				return nil
+			}
+		}
+	}
+
+	// Cache miss - perform DNS query
+	if err := s.performDNSQuery(req); err != nil {
+		return err
+	}
+
+	// Cache successful response if Redis is available
+	if s.redis != nil && req.response != nil && len(req.response.Answer) > 0 {
+		// Store the exact response
+		if responseBinary, err := req.response.Pack(); err == nil {
+			// Store in both current and stale cache
+			s.redis.Set(ctx, cacheKey, responseBinary, time.Duration(cacheTTL)*time.Second)
+			s.redis.Set(ctx, cacheKey+":stale", responseBinary, time.Duration(cacheTTL*2)*time.Second)
+		}
+	}
+
+	return nil
+}
+
+func (s *Server) refreshCache(cacheKey string, request *dns.Msg) {
+	ctx := context.Background()
+	req := &DNSRequest{
+		request: request,
+	}
+
+	if err := s.performDNSQuery(req); err != nil {
+		return
+	}
+
+	if req.response != nil {
+		if responseBinary, err := req.response.Pack(); err == nil {
+			const cacheTTL = 300
+			s.redis.Set(ctx, cacheKey, responseBinary, time.Duration(cacheTTL)*time.Second)
+			s.redis.Set(ctx, cacheKey+":stale", responseBinary, time.Duration(cacheTTL*2)*time.Second)
+		}
+	}
+}
+
+func (s *Server) performDNSQuery(req *DNSRequest) error {
+	numServers := len(s.conf.Upstream)
+	for i := uint(0); i < s.conf.Tries; i++ {
+		req.currentUpstream = s.conf.Upstream[rand.Intn(numServers)]
+		upstream, t := addressAndType(req.currentUpstream)
+
+		var err error
+		switch t {
+		case "tcp-tls":
+			req.response, _, err = s.tcpClientTLS.ExchangeContext(context.Background(), req.request, upstream)
+		case "tcp", "udp":
+			if t == "tcp" || (s.indexQuestionType(req.request, dns.TypeAXFR) > -1) {
+				req.response, _, err = s.tcpClient.ExchangeContext(context.Background(), req.request, upstream)
+			} else {
+				req.response, _, err = s.udpClient.ExchangeContext(context.Background(), req.request, upstream)
+				if err == nil && req.response != nil && req.response.Truncated {
+					req.response, _, err = s.tcpClient.ExchangeContext(context.Background(), req.request, upstream)
+				}
+			}
+		default:
+			return &configError{"invalid DNS type"}
+		}
+
+		if err == nil && req.response != nil {
 			return nil
 		}
 		log.Printf("DNS error from upstream %s: %s\n", req.currentUpstream, err.Error())
 	}
-	return err
+	return fmt.Errorf("all upstream servers failed")
 }
