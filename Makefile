@@ -1,3 +1,8 @@
+.PHONY: build compose-up compose-down test test-deps
+
+build:
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o doh-server/doh-server ./doh-server
+
 compose-up:
 	podman-compose build --no-cache
 	podman-compose up

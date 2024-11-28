@@ -66,6 +66,18 @@ podman run --rm -d \
   dns-over-https:dev
 ```
 
+### Test
+
+```bash
+make test
+```
+
+## Binary
+
+```bash
+make build
+```
+
 ## Todo
 
 - [x] Podman-Compose with Redis and DNS-over-HTTPS
