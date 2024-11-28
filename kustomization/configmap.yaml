@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doh-config
+  namespace: dns-over-https
+data:
+  UPSTREAM_DNS_SERVER: "tcp:208.67.222.222:53"
+  DOH_HTTP_PREFIX: "/getnsrecord"
+  DOH_SERVER_LISTEN_PORT: "8053"
+  REDIS_URL: "redis:6379"
+  DOH_SERVER_TIMEOUT: "10"
+  DOH_SERVER_TRIES: "3"
+  DOH_SERVER_VERBOSE: "false"

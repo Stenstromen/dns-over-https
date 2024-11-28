@@ -1,0 +1,24 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  #  annotations:
+  #    cert-manager.io/cluster-issuer: letsencrypt-prod
+  name: doh-ingress
+  namespace: dns-over-https
+spec:
+  rules:
+    - host: doh.example.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: doh-service
+                port:
+                  number: 8053
+            path: /
+            pathType: Prefix
+#  tls:
+#    - hosts:
+#        - doh.example.com
+#      secretName: doh-tls

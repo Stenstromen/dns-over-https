@@ -20,6 +20,15 @@ DOH_SERVER_VERBOSE="false"
 
 ## Prod
 
+### Kubernetes Kustomize
+
+- Remember to update ingress.yaml with your own domain and certificate manager issuer
+- Network policy is not included but highly recommended
+
+```bash
+kubectl apply -k kustomization/
+```
+
 ### Compose
 
 ```bash
@@ -81,5 +90,5 @@ make build
 ## Todo
 
 - [x] Podman-Compose with Redis and DNS-over-HTTPS
-- [ ] Kubernetes Deployment example with Redis and DNS-over-HTTPS
+- [x] Kubernetes Deployment example with Redis and DNS-over-HTTPS
 - [x] Integration Test
