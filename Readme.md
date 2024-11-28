@@ -37,6 +37,6 @@ podman run --rm \
 
 ## Todo
 
-- [ ] Podman-Compose with Redis and DNS-over-HTTPS
+- [x] Podman-Compose with Redis and DNS-over-HTTPS
 - [ ] Kubernetes Deployment example with Redis and DNS-over-HTTPS
 - [ ] Integration Test
