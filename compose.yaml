@@ -10,7 +10,7 @@ services:
       - "8053:8053/udp"
     environment:
       - UPSTREAM_DNS_SERVER=udp:208.67.222.222:53
-      - DOH_HTTP_PREFIX=/query
+      - DOH_HTTP_PREFIX=/getnsrecord
       - DOH_SERVER_LISTEN_PORT=8053
       - REDIS_URL=redis:6379
       - DOH_SERVER_TIMEOUT=10
