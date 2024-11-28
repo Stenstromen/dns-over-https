@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD036 -->
+
 # DNS-over-HTTPS
 
 This is a fork of the original DNS-over-HTTPS project [https://github.com/m13253/dns-over-https](https://github.com/m13253/dns-over-https), with added support for caching DNS responses in Redis and highly secure container image.
@@ -16,23 +18,52 @@ DOH_SERVER_TRIES="3"
 DOH_SERVER_VERBOSE="false"
 ```
 
-## Build
+## Prod
+
+### Compose
 
 ```bash
-podman build -t dns-over-https .
+podman-compose up -d
 ```
 
-## Run
+### Podman Run
+
+*requires redis endpoint to be available*
 
 ```bash
-podman run --rm \
+podman run --rm -d \
+  --name dns-over-https \
   -e UPSTREAM_DNS_SERVER="udp:208.67.222.222:53" \
   -e DOH_HTTP_PREFIX="/getnsrecord" \
   -e DOH_SERVER_LISTEN_PORT="8053" \
   -e REDIS_URL="redis:6379" \
   -p 8053:8053/tcp \
   -p 8053:8053/udp \
-  dns-over-https
+  ghcr.io/stenstromen/dns-over-https:latest
+```
+
+## Dev
+
+### Build
+
+```bash
+podman build -t dns-over-https:dev .
+```
+
+### Run
+
+*requires redis endpoint to be available*
+
+```bash
+podman run --rm -d \
+  --name dns-over-https \
+  -e UPSTREAM_DNS_SERVER="udp:208.67.222.222:53" \
+  -e DOH_HTTP_PREFIX="/getnsrecord" \
+  -e DOH_SERVER_LISTEN_PORT="8053" \
+  -e REDIS_URL="redis:6379" \
+  -p 8053:8053/tcp \
+  -p 8053:8053/udp \
+  dns-over-https:dev
 ```
 
 ## Todo
