@@ -2,6 +2,8 @@
 
 # DNS-over-HTTPS
 
+![logo](doh_logo.webp)
+
 This is a fork of the original DNS-over-HTTPS project [https://github.com/m13253/dns-over-https](https://github.com/m13253/dns-over-https), with added support for caching DNS responses in Redis and highly secure container image.
 
 Forked at version 2.3.3
