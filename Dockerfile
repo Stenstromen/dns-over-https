@@ -1,5 +1,4 @@
 FROM golang:alpine AS build
-RUN apk add --no-cache git make
 WORKDIR /src
 ADD . /src
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o doh-server/doh-server ./doh-server
