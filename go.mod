@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/infobloxopen/go-trees v0.0.0-20221216143356-66ceba885ebc
-	github.com/miekg/dns v1.1.63
+	github.com/miekg/dns v1.1.64
 	golang.org/x/net v0.37.0
 )
 
@@ -16,7 +16,7 @@ require (
 
 require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/redis/go-redis/v9 v9.7.1
+	github.com/redis/go-redis/v9 v9.7.3
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
