@@ -6,7 +6,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/infobloxopen/go-trees v0.0.0-20221216143356-66ceba885ebc
 	github.com/miekg/dns v1.1.64
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 )
 
 require (
