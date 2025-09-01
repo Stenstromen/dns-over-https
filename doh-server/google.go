@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	"golang.org/x/net/idna"
 
 	jsondns "github.com/stenstromen/dns-over-https/json-dns"
 )
@@ -25,12 +24,10 @@ func (s *Server) parseRequestGoogle(_ context.Context, _ http.ResponseWriter, r 
 			errtext: "Invalid argument value: \"name\"",
 		}
 	}
-	if punycode, err := idna.ToASCII(name); err == nil {
-		name = punycode
-	} else {
+	if strings.Contains(name, "..") || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
 		return &DNSRequest{
 			errcode: 400,
-			errtext: fmt.Sprintf("Invalid argument value: \"name\" = %q (%s)", name, err.Error()),
+			errtext: fmt.Sprintf("Invalid argument value: \"name\" = %q", name),
 		}
 	}
 

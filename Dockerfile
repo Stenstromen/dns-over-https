@@ -1,7 +1,7 @@
-FROM golang:alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 ADD . /src
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o doh-server/doh-server ./doh-server
+RUN CGO_ENABLED=0 GOOS=linux GOEXPERIMENT=greenteagc go build -a -ldflags '-extldflags "-static"' -o doh-server/doh-server ./doh-server
 
 FROM scratch
 COPY --from=build /src/doh-server/doh-server /doh-server

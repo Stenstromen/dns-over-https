@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -49,7 +50,8 @@ func main() {
 	flag.StringVar(&configPath, "conf", "", "configuration file path")
 	flag.Parse()
 
-	// Initialize default config
+	log.Printf("Starting with GOMAXPROCS=%d (container-aware)", runtime.GOMAXPROCS(0))
+
 	conf = &config{
 		Listen:   []string{"0.0.0.0:8053"},
 		Path:     "/dns-query",

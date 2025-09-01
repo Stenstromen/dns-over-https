@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/trace"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -28,6 +30,7 @@ type Server struct {
 	tcpClientTLS *dns.Client
 	servemux     *http.ServeMux
 	redis        *redis.Client
+	flightRec    *trace.FlightRecorder
 }
 
 type DNSRequest struct {
@@ -75,7 +78,10 @@ func NewServer(conf *config) (*Server, error) {
 		conf: conf,
 	}
 
-	// Initialize Redis if available
+	if conf.Verbose {
+		server.flightRec = trace.NewFlightRecorder(trace.FlightRecorderConfig{})
+	}
+
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		server.redis = redis.NewClient(&redis.Options{
 			Addr: redisURL,
@@ -132,9 +138,11 @@ func (s *Server) Start() error {
 		}
 	}
 
+	var wg sync.WaitGroup
 	results := make(chan error, len(s.conf.Listen))
+
 	for _, addr := range s.conf.Listen {
-		go func(addr string) {
+		wg.Go(func() {
 			var err error
 			if s.conf.Cert != "" || s.conf.Key != "" {
 				if clientCAPool != nil {
@@ -165,28 +173,38 @@ func (s *Server) Start() error {
 				log.Println(err)
 			}
 			results <- err
-		}(addr)
+		})
 	}
-	// wait for all handlers
-	for i := 0; i < cap(results); i++ {
-		err := <-results
+
+	wg.Wait()
+	close(results)
+
+	for err := range results {
 		if err != nil {
 			return err
 		}
 	}
-	close(results)
 	return nil
 }
 
 func (s *Server) handlerFunc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	if s.flightRec != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				// Write trace on panic for debugging
+				if f, err := os.Create(fmt.Sprintf("trace-panic-%d.trace", time.Now().Unix())); err == nil {
+					s.flightRec.WriteTo(f)
+					f.Close()
+				}
+				panic(r)
+			}
+		}()
+	}
+
 	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-		if strings.ContainsRune(realIP, ':') {
-			r.RemoteAddr = "[" + realIP + "]:0"
-		} else {
-			r.RemoteAddr = realIP + ":0"
-		}
+		r.RemoteAddr = net.JoinHostPort(realIP, "0")
 		_, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			r.RemoteAddr = realIP
