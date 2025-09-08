@@ -9,8 +9,84 @@ env:
   IMAGE_NAME: dns-over-https
 
 jobs:
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build Docker image
+        run: docker build -t doh-server .
+
+      - name: Run doh-server container
+        run: |
+          docker run -d \
+            --name doh-server \
+            --network host \
+            -e REDIS_URL=localhost:6379 \
+            -e UPSTREAM_DNS_SERVER=tcp:208.67.222.222:53 \
+            -e DOH_HTTP_PREFIX=/getnsrecord \
+            -e DOH_SERVER_LISTEN_PORT=8053 \
+            -e DOH_SERVER_TIMEOUT=10 \
+            -e DOH_SERVER_TRIES=3 \
+            -e DOH_SERVER_VERBOSE=false \
+            doh-server
+
+      - name: Wait for doh-server to be ready
+        run: |
+          echo "Waiting for doh-server to be ready..."
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8053/getnsrecord?name=example.com&type=A > /dev/null 2>&1; then
+              echo "✅ doh-server is ready!"
+              break
+            fi
+            echo "Attempt $i: doh-server not ready yet, waiting..."
+            sleep 2
+          done
+          if [ $i -eq 30 ]; then
+            echo "❌ doh-server failed to start within 60 seconds"
+            docker logs doh-server
+            exit 1
+          fi
+
+      - name: ℹ️ Testing first DNS request...
+        run: |
+          RESPONSE=$(curl -s -H "Accept: application/json" "http://localhost:8053/getnsrecord?name=podman-desktop.io&type=TXT")
+          ANSWER=$(echo $RESPONSE | jq -r '.Answer[0].data' | tr -d '"')
+          EXPECTED="google-site-verification=quQGxmY-gXc3frcrpUE5WSGdxP4MLkDrYb5ObzJscaE"
+          if [ "$ANSWER" != "$EXPECTED" ]; then
+            echo "❌ Test failed: Expected '$EXPECTED' but got '$ANSWER'"
+            exit 1
+          fi
+          echo "✅ Test passed"
+
+      - name: ℹ️ Testing cache...
+        run: |
+          CACHE_STATUS=$(curl -s -H "Accept: application/json" -I "http://localhost:8053/getnsrecord?name=podman-desktop.io&type=TXT" | grep -i "x-cache-status" | tr -d '\r')
+          if [[ "$CACHE_STATUS" != *"HIT"* ]]; then
+            echo "❌ Cache test failed: Expected 'X-Cache-Status: HIT' but got '$CACHE_STATUS'"
+            exit 1
+          fi
+          echo "✅ Cache test successful"
+
+      - name: Show container logs (if tests fail)
+        if: failure()
+        run: |
+          echo "📋 doh-server logs:"
+          docker logs doh-server
+          echo "📋 Redis logs:"
+          docker logs $(docker ps -q --filter ancestor=redis:alpine)
+
   build:
     name: Build and Push
+    needs: [integration-test]
     runs-on: ubuntu-latest
     steps:
       - name: Set up QEMU
@@ -38,7 +114,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
   flux-update:
-    needs: [build]
+    needs: [integration-test, build]
     runs-on: ubuntu-latest
     env:
       VERSIONTAG: ${{ github.event.release.tag_name }}

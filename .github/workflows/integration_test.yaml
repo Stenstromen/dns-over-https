@@ -62,7 +62,7 @@ jobs:
           fi
           echo "✅ Test passed"
 
-      - name: ✅ Cache test successful
+      - name: ℹ️ Testing cache...
         run: |
           CACHE_STATUS=$(curl -s -H "Accept: application/json" -I "http://localhost:8053/getnsrecord?name=podman-desktop.io&type=TXT" | grep -i "x-cache-status" | tr -d '\r')
           if [[ "$CACHE_STATUS" != *"HIT"* ]]; then
@@ -78,13 +78,3 @@ jobs:
           docker logs doh-server
           echo "📋 Redis logs:"
           docker logs $(docker ps -q --filter ancestor=redis:alpine)
-
-      - name: Cleanup containers
-        if: always()
-        run: |
-          echo "🧹 Cleaning up containers..."
-          docker stop doh-server || true
-          docker rm doh-server || true
-
-      - name: ✅ All tests passed
-        run: echo "✅ All tests passed"
