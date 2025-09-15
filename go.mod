@@ -23,7 +23,7 @@ require (
 
 require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/redis/go-redis/v9 v9.13.0
+	github.com/redis/go-redis/v9 v9.14.0
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
