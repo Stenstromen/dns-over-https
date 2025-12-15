@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doh-strace-service
+  namespace: default
+spec:
+  ports:
+    - name: dns-tcp
+      port: 8053
+      targetPort: 8053
+  selector:
+    app: doh-strace
+

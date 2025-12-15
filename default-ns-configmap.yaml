@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doh-config
+  namespace: default
+data:
+  UPSTREAM_DNS_SERVER: "tcp:1.0.0.1:53"
+  DOH_HTTP_PREFIX: "/getnsrecord"
+  DOH_SERVER_LISTEN_PORT: "8053"
+  DOH_SERVER_TIMEOUT: "10"
+  DOH_SERVER_TRIES: "3"
+  DOH_SERVER_VERBOSE: "false"
+

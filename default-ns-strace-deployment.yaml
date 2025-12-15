@@ -1,0 +1,63 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doh-strace
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doh-strace
+  template:
+    metadata:
+      labels:
+        app: doh-strace
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: doh
+          image: localhost/doh-server:strace
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8053
+              protocol: TCP
+          # Override entrypoint to run with strace
+          command:
+            - /usr/bin/strace
+            - -f
+            - -e
+            - trace=all
+            - -o
+            - /tmp/strace.log
+            - -s
+            - "200"
+            - -y
+            - -yy
+            - --
+            - /doh-server
+          envFrom:
+            - configMapRef:
+                name: doh-config
+          volumeMounts:
+            - name: strace-output
+              mountPath: /tmp
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            privileged: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: false  # Need write access for strace log
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                - SYS_PTRACE  # Required for strace
+              drop: ["ALL"]
+            seccompProfile:
+              type: Unconfined  # Temporarily unconfined to capture all syscalls
+      volumes:
+        - name: strace-output
+          emptyDir: {}
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+
