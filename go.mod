@@ -1,6 +1,6 @@
 module github.com/stenstromen/dns-over-https
 
-go 1.25.0
+go 1.26.0
 
 // Ignore directories that don't contain Go code
 ignore (
