@@ -53,12 +53,13 @@ func main() {
 	log.Printf("Starting with GOMAXPROCS=%d (container-aware)", runtime.GOMAXPROCS(0))
 
 	conf = &config{
-		Listen:   []string{"0.0.0.0:8053"},
-		Path:     "/dns-query",
-		Upstream: []string{"udp:8.8.8.8:53"},
-		Timeout:  10,
-		Tries:    3,
-		Verbose:  false,
+		Listen:              []string{"0.0.0.0:8053"},
+		Path:                "/dns-query",
+		Upstream:            []string{"udp:8.8.8.8:53"},
+		Timeout:             10,
+		Tries:               3,
+		BackupRetryInterval: 30,
+		Verbose:             false,
 	}
 
 	// Override with environment variables if present
@@ -75,7 +76,17 @@ func main() {
 	}
 
 	if upstream := os.Getenv("DOH_UPSTREAM_DNS"); upstream != "" {
-		conf.Upstream = strings.Split(upstream, ",")
+		conf.Upstream = splitUpstreamList(upstream)
+	}
+
+	if backup := os.Getenv("BACKUP_UPSTREAM_DNS_SERVER"); backup != "" {
+		conf.BackupUpstream = splitUpstreamList(backup)
+	}
+
+	if retry := os.Getenv("BACKUP_RETRY_INTERVAL"); retry != "" {
+		if t, err := strconv.Atoi(retry); err == nil {
+			conf.BackupRetryInterval = uint(t)
+		}
 	}
 
 	if timeout := os.Getenv("DOH_SERVER_TIMEOUT"); timeout != "" {

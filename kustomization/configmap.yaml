@@ -6,6 +6,8 @@ metadata:
   namespace: dns-over-https
 data:
   UPSTREAM_DNS_SERVER: "tcp:208.67.222.222:53"
+  # BACKUP_UPSTREAM_DNS_SERVER: "udp:1.1.1.1:53"
+  # BACKUP_RETRY_INTERVAL: "30"
   DOH_HTTP_PREFIX: "/getnsrecord"
   DOH_SERVER_LISTEN_PORT: "8053"
   REDIS_URL: "redis:6379"

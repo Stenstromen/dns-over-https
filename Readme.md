@@ -12,6 +12,8 @@ Forked at version 2.3.3
 
 ```bash
 UPSTREAM_DNS_SERVER="udp:208.67.222.222:53"
+BACKUP_UPSTREAM_DNS_SERVER="udp:1.1.1.1:53"
+BACKUP_RETRY_INTERVAL="30"
 DOH_HTTP_PREFIX="/getnsrecord"
 DOH_SERVER_LISTEN_PORT="8053"
 REDIS_URL="redis:6379"
@@ -19,6 +21,16 @@ DOH_SERVER_TIMEOUT="10"
 DOH_SERVER_TRIES="3"
 DOH_SERVER_VERBOSE="false"
 ```
+
+### Backup upstream (failover)
+
+`UPSTREAM_DNS_SERVER` can be a comma-separated list of **equivalent** resolvers. Those are used for load balancing / retries — every listed server is eligible on every query.
+
+`BACKUP_UPSTREAM_DNS_SERVER` is different: it is only used when the preferred upstream is **unreachable** (timeout, connection refused, or no response). Valid DNS answers from the preferred server — including NXDOMAIN and SERVFAIL — do **not** fail over, so content filtering is not bypassed just because a name is blocked.
+
+While the preferred upstream is down, all queries go to the backup. A background probe (`BACKUP_RETRY_INTERVAL`, default 30 seconds) checks the preferred server with a root `NS` query; any DNS response means it is reachable again and traffic switches back.
+
+If you use a backup, consider a shorter `DOH_SERVER_TIMEOUT` (for example `2`) so the first failover does not wait the full default 10 seconds.
 
 ## Prod
 

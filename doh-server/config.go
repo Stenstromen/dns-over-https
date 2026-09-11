@@ -2,6 +2,7 @@ package main
 
 import (
 	"regexp"
+	"strings"
 )
 
 type config struct {
@@ -13,8 +14,10 @@ type config struct {
 	DebugHTTPHeaders    []string `toml:"debug_http_headers"`
 	Listen              []string `toml:"listen"`
 	Upstream            []string `toml:"upstream"`
+	BackupUpstream      []string `toml:"backup_upstream"`
 	Timeout             uint     `toml:"timeout"`
 	Tries               uint     `toml:"tries"`
+	BackupRetryInterval uint     `toml:"backup_retry_interval"`
 	Verbose             bool     `toml:"verbose"`
 	LogGuessedIP        bool     `toml:"log_guessed_client_ip"`
 	ECSAllowNonGlobalIP bool     `toml:"ecs_allow_non_global_ip"`
@@ -31,6 +34,18 @@ func addressAndType(us string) (string, string) {
 	}
 
 	return us[p[2]+1:], us[:p[2]]
+}
+
+func splitUpstreamList(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 type configError struct {

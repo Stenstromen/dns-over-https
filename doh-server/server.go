@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -31,6 +31,8 @@ type Server struct {
 	servemux     *http.ServeMux
 	redis        *redis.Client
 	flightRec    *trace.FlightRecorder
+	primaryDown  atomic.Bool
+	probeStop    chan struct{}
 }
 
 type DNSRequest struct {
@@ -47,7 +49,20 @@ type DNSRequest struct {
 func NewServer(conf *config) (*Server, error) {
 	// Override config with environment variables if present
 	if upstreamDNS := os.Getenv("UPSTREAM_DNS_SERVER"); upstreamDNS != "" {
-		conf.Upstream = []string{upstreamDNS}
+		conf.Upstream = splitUpstreamList(upstreamDNS)
+	}
+
+	if backupDNS := os.Getenv("BACKUP_UPSTREAM_DNS_SERVER"); backupDNS != "" {
+		conf.BackupUpstream = splitUpstreamList(backupDNS)
+	}
+
+	if retry := os.Getenv("BACKUP_RETRY_INTERVAL"); retry != "" {
+		if t, err := strconv.Atoi(retry); err == nil {
+			conf.BackupRetryInterval = uint(t)
+		}
+	}
+	if conf.BackupRetryInterval == 0 {
+		conf.BackupRetryInterval = 30
 	}
 
 	if prefix := os.Getenv("DOH_HTTP_PREFIX"); prefix != "" {
@@ -114,10 +129,17 @@ func NewServer(conf *config) (*Server, error) {
 	}
 	server.servemux = http.NewServeMux()
 	server.servemux.HandleFunc(conf.Path, server.handlerFunc)
+
+	if len(conf.BackupUpstream) > 0 {
+		log.Printf("Backup upstream configured: %v (probe interval %ds)", conf.BackupUpstream, conf.BackupRetryInterval)
+	}
+
 	return server, nil
 }
 
 func (s *Server) Start() error {
+	s.startPrimaryProbe()
+
 	servemux := http.Handler(s.servemux)
 	if s.conf.Verbose {
 		servemux = handlers.CombinedLoggingHandler(os.Stdout, servemux)
@@ -439,35 +461,4 @@ func (s *Server) refreshCache(cacheKey string, request *dns.Msg) {
 			s.redis.Set(ctx, cacheKey+":stale", responseBinary, time.Duration(cacheTTL*2)*time.Second)
 		}
 	}
-}
-
-func (s *Server) performDNSQuery(req *DNSRequest) error {
-	numServers := len(s.conf.Upstream)
-	for i := uint(0); i < s.conf.Tries; i++ {
-		req.currentUpstream = s.conf.Upstream[rand.Intn(numServers)]
-		upstream, t := addressAndType(req.currentUpstream)
-
-		var err error
-		switch t {
-		case "tcp-tls":
-			req.response, _, err = s.tcpClientTLS.ExchangeContext(context.Background(), req.request, upstream)
-		case "tcp", "udp":
-			if t == "tcp" || (s.indexQuestionType(req.request, dns.TypeAXFR) > -1) {
-				req.response, _, err = s.tcpClient.ExchangeContext(context.Background(), req.request, upstream)
-			} else {
-				req.response, _, err = s.udpClient.ExchangeContext(context.Background(), req.request, upstream)
-				if err == nil && req.response != nil && req.response.Truncated {
-					req.response, _, err = s.tcpClient.ExchangeContext(context.Background(), req.request, upstream)
-				}
-			}
-		default:
-			return &configError{"invalid DNS type"}
-		}
-
-		if err == nil && req.response != nil {
-			return nil
-		}
-		log.Printf("DNS error from upstream %s: %s\n", req.currentUpstream, err.Error())
-	}
-	return fmt.Errorf("all upstream servers failed")
 }
